@@ -44,7 +44,7 @@ async function generatePasswordHash(passwordArray) {
   }
 }
 
-async function generateRecoveryHash(rescoveryArrays) {
+async function generateRecoveryHash(recoveryHash) {
   try {
     let { initialize } = await import("zokrates-js");
     const zokratesProvider = await initialize();
@@ -52,29 +52,19 @@ async function generateRecoveryHash(rescoveryArrays) {
     const source = `import "hashes/sha256/256bitPadded" as sha256;
     import "utils/pack/u32/pack256" as pack256;
     
-    def main(private u32[8] a, private u32[8] b, private u32[8] c, private u32[8] d) -> field[4] {
+    def main(private u32[8] a) -> field {
         u32[8] h1 = sha256(a);
-        u32[8] h2 = sha256(b);
-        u32[8] h3 = sha256(c);
-        u32[8] h4 = sha256(d);
     
-        return [pack256(h1), pack256(h2), pack256(h3), pack256(h4)];
+        return pack256(h1);
     }`;
 
     const artifacts = zokratesProvider.compile(source);
 
     const { witness, output } = zokratesProvider.computeWitness(artifacts, [
-      rescoveryArrays[0],
-      rescoveryArrays[1],
-      rescoveryArrays[2],
-      rescoveryArrays[3],
+      recoveryHash,
     ]);
-    const lineBreakCleanedOutput = output.split("\n");
-    const cleanedArray = [...lineBreakCleanedOutput.slice(1, 5)].map((item) => {
-      return item.trim().replace(/^"|"|,$/g, "");
-    });
 
-    return cleanedArray;
+    return output.trim().replace(/^"|"|,$/g, "");
   } catch (error) {
     throw new Error(error);
   }
@@ -158,21 +148,17 @@ router.post("/passcode/verify", async (req, res) => {
 
 router.post("/recovery/hash", async (req, res) => {
   try {
-    const recoveryArray = req.body.recoveryArray;
+    const recoveryCode = req.body.recoveryCode;
 
-    if (!recoveryArray) {
+    if (!recoveryCode) {
       return res.status(400).json({ error: "Bad Request" });
     }
 
-    let recoveryArrayUint8Array = [];
+    const recoveryCodeUint8Array = getUintEncodedString(recoveryCode);
 
-    recoveryArray.forEach((item) => {
-      recoveryArrayUint8Array.push(getUintEncodedString(item));
-    });
+    const recoveryHash = await generateRecoveryHash(recoveryCodeUint8Array);
 
-    const recoveryHashes = await generateRecoveryHash(recoveryArrayUint8Array);
-
-    res.json({ recoveryHashes });
+    res.json({ recoveryHash });
   } catch (err) {
     res.json({ error: err.message });
   }
